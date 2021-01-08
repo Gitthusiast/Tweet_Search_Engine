@@ -2,6 +2,9 @@ import pickle
 import requests
 import zipfile
 import re
+from os import makedirs as os_makedirs
+from os.path import dirname as os_path_dirname
+from os.path import join as os_path_join
 
 
 def save_obj(obj, name):
@@ -11,6 +14,10 @@ def save_obj(obj, name):
     :param name: name of the pickle file.
     :return: -
     """
+
+    # if any directory on path doesn't exist - create it
+    os_makedirs(os_path_dirname(name), exist_ok=True)
+
     with open(name + '.pkl', 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
@@ -24,6 +31,17 @@ def load_obj(name):
     with open(name + '.pkl', 'rb') as f:
         return pickle.load(f)
 
+
+def load_inverted_index(output_path=None):
+    """
+    This function loads the inverted index dictionary from disk
+    :param output_path: path to inverted_idx.pkl
+    :return: returns contents of inverted_idx file
+    """
+
+    path = os_path_join(output_path, "\\inverted_idx.pkl")
+    with open(path, "rb") as f:
+        return pickle.load(f)
 
 __fid_ptrn = re.compile(
     "(?<=/folders/)([\w-]+)|(?<=%2Ffolders%2F)([\w-]+)|(?<=/file/d/)([\w-]+)|(?<=%2Ffile%2Fd%2F)([\w-]+)|(?<=id=)([\w-]+)|(?<=id%3D)([\w-]+)")
