@@ -28,7 +28,7 @@ class Parse:
 
     def __init__(self):
         self.stop_words = stopwords.words('english')
-        self.stop_words.extend(["rt", "n't", "'re", "gon", "na"])
+        self.stop_words.extend(["rt", "n't", "'re", "gon", "na", "covid", "coronavirus", "covid-19"])
         self.punctuation_to_remove = punctuation.replace('#', '').replace('@', '').replace('%', '').replace('$', '')
         self.symbols = "<>:\"/\\|!?*~.'`-_()^,+=;"
         self.token_stemmer = stemmer.Stemmer()
@@ -105,8 +105,15 @@ class Parse:
     def parse_hashtag(self, text_tokens, i):
         """
         this function calls to parse underscore or parse camel case respectively
-        :param - i the index of #
+        :param - i the index of
+        :return - return False if the hashtag contained not ascii values else return True
         """
+
+        if len(text_tokens) > i + 1 and not text_tokens[i+1].isascii():
+            del text_tokens[i]  # deleting ashtag
+            del text_tokens[i]  # deleting not ascii symbol
+            return False
+
         # parsing snake case
         if len(text_tokens) > i + 1 and text_tokens[i + 1].count('_') > 0:
             self.parse_hashtag_underscore(text_tokens, i)
@@ -117,6 +124,7 @@ class Parse:
         # parsing pascal and camel cases
         elif len(text_tokens) > i + 1:
             self.parse_hashtag_camel_case(text_tokens, i)
+        return True
 
     def parse_tagging(self, text_tokens, i):
         """
@@ -411,7 +419,8 @@ class Parse:
                     continue
 
                 if text_tokens[index] == '#':
-                    self.parse_hashtag(text_tokens, index)
+                    if not self.parse_hashtag(text_tokens, index):
+                        continue
                 elif text_tokens[index] == '@':
                     self.parse_tagging(text_tokens, index)
                 elif text_tokens[index] == 'https' or text_tokens[index] == 'http':
