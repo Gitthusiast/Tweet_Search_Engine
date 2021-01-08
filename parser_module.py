@@ -27,8 +27,10 @@ class Parse:
             "29th": "29", "30th": "30", "thirty": "30", "31st": "31", "thirty-first": "31"}
 
     def __init__(self):
-        self.stop_words = frozenset(stopwords.words('english'))
-
+        self.stop_words = stopwords.words('english')
+        self.stop_words.extend(["rt", "n't", "'re", "gon", "na"])
+        self.punctuation_to_remove = punctuation.replace('#', '').replace('@', '').replace('%', '').replace('$', '')
+        self.symbols = "<>:\"/\\|!?*~.'`-_()^,+=;"
         self.token_stemmer = stemmer.Stemmer()
 
     def get_valid_url(self, url_col):
@@ -89,13 +91,28 @@ class Parse:
             text_tokens.insert(i + 1 + insertion_index, token[from_index:len(token)].lower())
         text_tokens[i] = joined_hashtag
 
+    def parse_hashtag_upper_case(self, text_tokens, i):
+
+        """
+        this function parses hashtags of the the type #COVID19 #NJ
+        :param text_tokens: list of tokens that is changed
+        :param i: "#" index
+        """
+        joined_hashtag = '#'
+        joined_hashtag += text_tokens[i+1].lower()
+        text_tokens[i] = joined_hashtag  # "#covid19"
+
     def parse_hashtag(self, text_tokens, i):
         """
         this function calls to parse underscore or parse camel case respectively
+        :param - i the index of #
         """
         # parsing snake case
         if len(text_tokens) > i + 1 and text_tokens[i + 1].count('_') > 0:
             self.parse_hashtag_underscore(text_tokens, i)
+
+        elif len(text_tokens) > i+1 and text_tokens[i+1].isupper():
+            self.parse_hashtag_upper_case(text_tokens, i)
 
         # parsing pascal and camel cases
         elif len(text_tokens) > i + 1:
@@ -118,15 +135,23 @@ class Parse:
         :param text_tokens: list of tokens
         :param i: index of "https"
         """
-        if len(text_tokens) > i+1:
-            if text_tokens[i+1] == ':':
-                del text_tokens[i+1]  # removing ':'
-                link_token = text_tokens[i+1]
+        del text_tokens[i]  # removing 'https or http'
+        if len(text_tokens) > i and text_tokens[i] == ":":
+            if text_tokens[i] == ':':
+                del text_tokens[i]  # removing ':'
 
-                # splitting the first www.
-                if "www" in link_token.split("."):
-                    text_tokens[i + 1] = "www"
-                    text_tokens.insert(i + 2, link_token.lstrip("w."))
+                link_token = text_tokens[i]
+
+                tokens_in_url = link_token.split("/")
+                del text_tokens[i]
+
+                token_index = 0
+                while token_index < len(tokens_in_url):
+                    if tokens_in_url[token_index] == "t.co":
+                        break
+                    if tokens_in_url[token_index] != "twitter.com" and tokens_in_url[token_index] != "":
+                        text_tokens.insert(i + token_index, tokens_in_url[token_index].lstrip("w."))
+                    token_index += 1
 
     def is_float(self, number):
 
@@ -371,19 +396,16 @@ class Parse:
         """
 
         text_tokens = word_tokenize(text)
-        punctuation_to_remove = punctuation.replace('#', '').replace('@', '').replace('%', '').replace('$', '')
 
         index = 0
         while index < len(text_tokens):
 
-            if text_tokens[index] not in self.stop_words\
-                    and text_tokens[index] not in ["RT"]\
-                    and text_tokens[index] not in punctuation_to_remove\
+            if text_tokens[index].lower() not in self.stop_words\
+                    and text_tokens[index] not in self.punctuation_to_remove\
                     and text_tokens[index].isascii():
 
                 # removing unnecessary symbols
-                symbols = "<>:\"/\\|!?*~.'`-_()^,+=;"
-                text_tokens[index] = text_tokens[index].rstrip(symbols).lstrip(symbols)
+                text_tokens[index] = text_tokens[index].rstrip(self.symbols).lstrip(self.symbols)
                 if text_tokens[index] == "":
                     del text_tokens[index]
                     continue
@@ -394,6 +416,7 @@ class Parse:
                     self.parse_tagging(text_tokens, index)
                 elif text_tokens[index] == 'https' or text_tokens[index] == 'http':
                     self.parse_url(text_tokens, index)
+                    continue
 
                 # parse numeric values
                 elif self.is_float(text_tokens[index]):
@@ -412,7 +435,7 @@ class Parse:
                 # parse entities
                 # entity is every sequence of tokens starting with a capital letter \
                 # and appearing at least twice in the entire corpus
-                if index + 1 < len(text_tokens) and text_tokens[index].isupper() \
+                if index + 1 < len(text_tokens) and text_tokens[index][0].isupper() \
                         and text_tokens[index + 1][0].isupper():
                     self.parse_entities(text_tokens, index, entities)
 
@@ -421,6 +444,10 @@ class Parse:
                     after_stemming = self.token_stemmer.stem_term(text_tokens[index])
                     if after_stemming != '':
                         text_tokens[index] = after_stemming
+
+                if len(text_tokens[index]) == 1:
+                    del text_tokens[index]
+                    continue
 
                 index += 1
             else:
@@ -461,10 +488,22 @@ class Parse:
 
     def prep_url(self, url):
         """
-            remove unnecessary signs from urls
+            remove unnecessary signs from urls and not meaningful digits and letters
         """
-        trans_table = url.maketrans("/=?%-_", "      ")
-        return url.translate(trans_table)
+        trans_table = url.maketrans("\\/|=<>.?%-:_", "            ")
+        parsed_url = url.translate(trans_table)
+        parsed_url_tokens = parsed_url.split()
+        token_index = 0
+        while token_index < len(parsed_url_tokens):
+            if parsed_url_tokens[token_index].isdigit() \
+                    or len(parsed_url_tokens[token_index]) == 1 \
+                    or parsed_url_tokens[token_index] in ["www", "co", "com", "twitter", "status", "web", "https",
+                                                          "http"]:
+                parsed_url_tokens.remove(parsed_url_tokens[token_index])
+                continue
+            token_index += 1
+
+        return " ".join(parsed_url_tokens)
 
     def remove_shortened_urls(self, full_text):
         try:
@@ -486,15 +525,7 @@ class Parse:
         tweet_id = doc_as_list[0]
         tweet_date = doc_as_list[1]
         full_text = doc_as_list[2]
-        # TODO
-        # url = doc_as_list[3]
-        # retweet_text = doc_as_list[4]
-        # retweet_url = doc_as_list[5]
-        # quote_text = doc_as_list[6]
-        # quote_url = doc_as_list[7]
-
         full_text = self.remove_shortened_urls(full_text)
-        # self.remove_shortened_url(text_tokens, index)
         if doc_as_list[3] and doc_as_list[3] != "":
             url = self.get_valid_url(doc_as_list[3])
             url = self.prep_url(url)
@@ -510,7 +541,6 @@ class Parse:
         if doc_as_list[9] and doc_as_list[9] != "":
             quote_url = self.get_valid_url(doc_as_list[9])
             quote_url = self.prep_url(quote_url)
-
         term_dict = {}
 
         # dictionary for holding possible entities
