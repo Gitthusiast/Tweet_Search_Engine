@@ -1,7 +1,8 @@
 import nltk
-import search_engine_best
+import demoji
 
+demoji.download_codes()
+nltk.download('wordnet')
+nltk.download('lin_thesaurus')
 nltk.download('stopwords')
 nltk.download('punkt')
-
-search_engine_best.main()
