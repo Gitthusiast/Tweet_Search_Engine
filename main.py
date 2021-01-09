@@ -49,8 +49,8 @@ def main():
     q2n_relevant = bench_lbls.groupby('query')['y_true'].sum().to_dict()
     queries = pd.read_csv(queries_path, sep='\t')
 
-    stemming = True
-    engine = search_engine_best.SearchEngine()
+    stemming = False
+    engine = search_engine_best.SearchEngine(stemming=stemming)
     stemmed = "WithStem\\" if stemming else "WithoutStem\\"
     engine.build_index_from_parquet(bench_data_path, toSave=True, save_path=os.path.join(output_path, stemmed + "idx_bench"))
 

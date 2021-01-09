@@ -23,7 +23,9 @@ class Searcher:
     # parameter allows you to pass in a precomputed model that is already in 
     # memory for the searcher to use such as LSI, LDA, Word2vec models. 
     # MAKE SURE YOU DON'T LOAD A MODEL INTO MEMORY HERE AS THIS IS RUN AT QUERY TIME.
-    def __init__(self, parser, indexer, model=None, spell_correction=False, thesaurus=False, wordnet=False):
+    def __init__(self, parser, indexer, model=None,
+                 stemming=False, spell_correction=False, thesaurus=False, wordnet=False):
+
         self._parser = parser
         self._indexer = indexer
         self._ranker = Ranker()
@@ -32,6 +34,7 @@ class Searcher:
         self.average_length = self._indexer.average_document_length
 
         # dynamically choose search engine implementations
+        self.stemming = stemming
         self.spell_correction = spell_correction
         self.thesaurus = thesaurus
         self.wordnet = wordnet
@@ -68,7 +71,6 @@ class Searcher:
                             doc_weight + Searcher.K1 *
                             (1 - Searcher.B + Searcher.B * normalized_length)) + Searcher.DELTA)
 
-    # TODO
     # DO NOT MODIFY THIS SIGNATURE
     # You can change the internal implementation as you see fit.
     def search(self, query, k=None):
@@ -87,7 +89,7 @@ class Searcher:
         # parse query according to the same parsing rules of the corpus
         entities = {}
         term_dict = {}
-        parsed_query = self._parser.parse_sentence(query, entities)
+        parsed_query = self._parser.parse_sentence(query, entities, stemming=self.stemming)
         self._parser.parse_capital_letters(parsed_query, term_dict)
         processed_query = [*term_dict.keys()] + [*entities.keys()]
 
@@ -104,7 +106,7 @@ class Searcher:
 
                 # only correct terms that aren't in the inverted dictionary
                 # terms in the dictionary are considered correct for retrieval
-                if term not in self._indexer.inverted_index:
+                if term not in self._indexer.inverted_idx:
                     candidates = spell_checker.candidates(term)
                     max_to_return = min(Searcher.TOP_N, len(candidates))
                     candidates = candidates[:max_to_return]  # return only the top 3 results
@@ -123,9 +125,8 @@ class Searcher:
 
             from nltk.corpus import lin_thesaurus as thes
 
+            candidates = []
             for term in processed_query:
-                synonym = thes.synonyms(term)[0]  # find the most similar synonym
-                processed_query.append(synonym)  # extend the query
 
                 synsets = thes.synonyms(term)
                 for synset in synsets:
@@ -134,21 +135,49 @@ class Searcher:
                         max_to_return = min(Searcher.TOP_N, len(synonyms))
                         best_synonyms = synonyms[:max_to_return]
                         for synonym in best_synonyms:
-                            if synonym != term and synonym not in processed_query:
-                                processed_query.append(synonym)
+                            if synonym != term and synonym not in processed_query and synonym in self._indexer.inverted_idx:
+                                candidates.append(synonym)  # extend the query
                         break
+
+            processed_query += candidates
 
         if self.wordnet:
 
             from nltk.corpus import wordnet
 
+            print("wordenting")
+            candidates = []
             for term in processed_query:
-
-                synsests = wordnet.synsets(term)[:Searcher.TOP_N]  # retrieve best syn_sets
+                print(f"term {term}:")
+                synsests = wordnet.synsets(term)  # retrieve best syn_sets
+                max_to_return = min(Searcher.TOP_N, len(synsests))
+                synsests = synsests[0:max_to_return]
+                print("returned synsets")
+                skip = False
                 for synset in synsests:
-                    for lemma in synset.lemmas():  # possible synonyms
-                        if lemma.name() != term and lemma.name() not in processed_query:
-                            processed_query.append(lemma.name())
+                    for lemma in synset.lemmas()[:max_to_return]:  # possible synonyms
+                        print(f"possible lemma: {lemma.name()}")
+                        if lemma.name() != term and lemma.name() not in processed_query and lemma.name():
+                            if lemma.name() in self._indexer.inverted_idx:
+                                candidates.append(lemma.name())
+                                print(f"appended {lemma.name()}")
+                                skip = True
+                                break
+                            elif lemma.name().lower() in self._indexer.inverted_idx:
+                                candidates.append(lemma.name())
+                                print(f"appended {lemma.name()}")
+                                skip = True
+                                break
+                            elif lemma.name().upper() in self._indexer.inverted_idx:
+                                candidates.append(lemma.name())
+                                print(f"appended {lemma.name()}")
+                                skip = True
+                                break
+
+                    if skip:
+                        break
+
+            parsed_query += candidates
 
         # dictionary for holding all relevant documents (at least one query term appeared in the document)
         # format: {document_id: score}

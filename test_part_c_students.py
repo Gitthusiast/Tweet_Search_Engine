@@ -136,6 +136,7 @@ if __name__ == '__main__':
                                 [(q_id, str(doc_id)) for doc_id in q_res if not invalid_tweet_id(doc_id)])
                         if q_time > 10:
                             logging.error(f"Query {q_id} with keywords '{q_keywords}' took more than 10 seconds.")
+                            print(f"Query {q_id} with keywords '{q_keywords}' took more than 10 seconds.")
                 queries_results = pd.DataFrame(queries_results, columns=['query', 'tweet'])
 
                 # merge query results with labels benchmark
