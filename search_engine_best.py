@@ -11,11 +11,17 @@ class SearchEngine:
 
     # DO NOT MODIFY THIS SIGNATURE
     # You can change the internal implementation, but you must have a parser and an indexer.
-    def __init__(self, config=None):
+    def __init__(self, config=None, stemming=True, spell_correction=False, thesaurus=True, wordnet=False):
         self._config = config
         self._parser = Parse()
         self._indexer = Indexer(config)
         self._model = None
+
+        # dynamically choose search engine implementations
+        self.stemming = stemming
+        self.spell_correction = spell_correction
+        self.thesaurus = thesaurus
+        self.wordnet = wordnet
 
         # multiprocess shared objects initialized with lock
         self.number_of_documents = multiprocessing.Value('i', 0)
@@ -25,7 +31,6 @@ class SearchEngine:
 
         for document_as_list in iter(unparsed_queue.get, SearchEngine.SENTINEL):
             parsed_document = self._parser.parse_doc(document_as_list, stemming)
-            print(f"parsed document {parsed_document.tweet_id}")
             parsed_queue.put(parsed_document)
             with self.total_document_length.get_lock():
                 self.total_document_length.value += parsed_document.doc_length
@@ -35,18 +40,13 @@ class SearchEngine:
             unparsed_queue.task_done()
 
         # send terminating sentinel task
-        parsed_queue.put(SearchEngine.SENTINEL)
-        print("parser Entered STOP sentinel")
+        parsed_queue.put(SearchEngine.SENTINEL)  # send terminating sentinel task
         unparsed_queue.task_done()  # calling for the last sentinel JoinableQueue.get
 
     def _index_document(self, parsed_queue, indexer_queue):
 
         indexer = indexer_queue.get()
-        print(f"in process, {indexer.test}")
-        indexer.test = 1
-        print(f"in process, {indexer.test}")
         for document in iter(parsed_queue.get, SearchEngine.SENTINEL):
-            print("indexing document {}".format(document.tweet_id))
             indexer.add_new_doc(document)
             parsed_queue.task_done()
 
@@ -79,7 +79,7 @@ class SearchEngine:
         # Iterate over every document in the file
         #  for parsing documents
         parsing_process = multiprocessing.Process(target=self._parse_document,
-                                                  args=(unparsed_queue, parsed_queue))
+                                                  args=(unparsed_queue, parsed_queue, self.stemming))
         parsing_process.start()
         print("Started accepting documents for parsing")
 
@@ -96,15 +96,11 @@ class SearchEngine:
 
         # send terminating sentinel task
         unparsed_queue.put(SearchEngine.SENTINEL)
-        print("Entered STOP sentinel")
 
+        # waiting for parsing and indexing to finish
         unparsed_queue.join()
-        print("joined unparsed queue")
         parsed_queue.join()
-        self._indexer = indexer_queue.get()
-        print("joined parsed queue")
-
-        print(f"indexer -> {self._indexer.test}")
+        self._indexer = indexer_queue.get()  # retrieve updated indexer
 
         # after indexing all non-entity terms in the corpus, index legal entities
         self._indexer.index_entities()
@@ -114,8 +110,6 @@ class SearchEngine:
         self._indexer.verify_posting()
         print("finished verifying posting")
 
-        print(f"total: {self.total_document_length.value}")
-        print(f"#docs: {self.number_of_documents.value}")
         # calculate average document length
         average_document_length = float(self.total_document_length.value) / self.number_of_documents.value
         self._indexer.set_number_of_documents(self.number_of_documents.value)
@@ -149,7 +143,7 @@ class SearchEngine:
 
     # DO NOT MODIFY THIS SIGNATURE
     # You can change the internal implementation as you see fit.
-    def search(self, query, spell_correction=False):
+    def search(self, query):
         """ 
         Executes a query over an existing index and returns the number of 
         relevant docs and an ordered list of search results.
@@ -161,6 +155,8 @@ class SearchEngine:
             and the last is the least relevant result.
         """
 
-        searcher = Searcher(self._parser, self._indexer, model=self._model)
+        searcher = Searcher(self._parser, self._indexer, model=self._model,
+                            stemming=self.stemming, spell_correction=self.spell_correction,
+                            thesaurus=self.thesaurus, wordnet=self.wordnet)
 
         return searcher.search(query)

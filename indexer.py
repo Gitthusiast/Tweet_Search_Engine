@@ -13,7 +13,6 @@ class Indexer:
     # You can change the internal implementation as you see fit.
     def __init__(self, config):
 
-        self.test = 0
         self.config = config
 
         self.inverted_idx = {}  # dictionary format {term: [document_frequency, total_frequency] }

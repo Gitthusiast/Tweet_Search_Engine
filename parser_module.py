@@ -524,6 +524,8 @@ class Parse:
     def parse_doc(self, doc_as_list, stemming=False):
         """
         This function takes a tweet document as list and break it into different fields
+        :param stemming: Whether to performe stemming or not
+        :type stemming: bool
         :param doc_as_list: list re-presenting the tweet.
         :return: Document object with corresponding fields.
         """
